@@ -1,91 +1,80 @@
 //// Binary search tree data structure.
 //// The tree is left-leaning, meaning that duplicate values are stored in left child nodes.
 
-import gleam/int
 import gleam/string_builder
 import gleam/list
+import gleam/order.{type Order, Lt, Eq, Gt}
 
-pub opaque type Tree {
+type Tree(a) {
   Empty
-  Node(key: Int, left: Tree, right: Tree)
+  Node(key: a, left: Tree(a), right: Tree(a))
 }
 
-/// Returns a new tree containing no nodes
-pub fn new() -> Tree {
-  Empty
+pub opaque type BST(a) {
+  BST(root: Tree(a), compare: fn(a, a) -> Order)
+}
+
+/// Returns a new tree containing no nodes.
+/// Takes an order function used to compare node values.
+pub fn new(compare: fn(a, a) -> Order) -> BST(a) {
+  BST(Empty, compare)
 }
 
 /// Returns a new tree with nodes inserted for each value in `list`.
-/// The order of insertion is the same order as the list.
-pub fn from_list(list: List(Int)) -> Tree {
-  build_tree(new(), list)
+/// Takes an order function to compare node values.
+pub fn from_list(list: List(a), compare: fn(a, a) -> Order) -> BST(a) {
+  let root = from_list_recurse(list, Empty, compare)
+  BST(root, compare)
 }
 
 /// Inserts a node into the tree with its key set to `value` 
-pub fn insert(tree: Tree, value: Int) -> Tree {
-  case tree {
-    Empty -> Node(value, Empty, Empty)
-    Node(key, left, right) if value <= key -> Node(key, insert(left, value), right)
-    Node(key, left, right) -> Node(key, left, insert(right, value))
-  }
+pub fn insert(bst: BST(a), value: a) -> BST(a) {
+  let root = insert_recurse(bst.root, value, bst.compare)
+  BST(root, bst.compare)
 }
 
 /// Deletes the first node in the tree whose key equals `value`
-pub fn delete(tree: Tree, value: Int) -> Tree {
-  case tree {
-    Node(key, left, Empty) if value == key -> left
-    Node(key, Empty, right) if value == key -> right
-    Node(key, left, right) if value == key -> case get_leftmost_child(right) {
-      Node(successor_key, _, _) -> Node(successor_key, left, delete(right, successor_key))
-      Empty -> Empty
-    }
-    Node(key, left, right) if value < key -> Node(key, delete(left, value), right)
-    Node(key, left, right) if value > key -> Node(key, left, delete(right, value))
-    _ -> tree
-  }
+pub fn delete(bst: BST(a), value: a) -> BST(a) {
+  let root = delete_recurse(bst.root, value, bst.compare)
+  BST(root, bst.compare)
 }
 
 /// Deletes all nodes in the tree whose key equals `value`
-pub fn delete_all(tree: Tree, value: Int) -> Tree {
-  let tree_after_deletion = delete(tree, value)
-  case tree == tree_after_deletion {
-    True -> tree
-    False -> delete_all(tree_after_deletion, value)
+pub fn delete_all(bst: BST(a), value: a) -> BST(a) {
+  let bst_after_deletion = delete(bst, value)
+  case bst.root == bst_after_deletion.root {
+    True -> bst
+    False -> delete_all(bst_after_deletion, value)
   }
 }
 
 /// Returns `True` if a node in the tree has a key equal to `value` and `False` otherwise.
-pub fn contains(tree: Tree, value: Int) -> Bool {
-  case tree {
-    Empty -> False
-    Node(key, _, _) if value == key -> True
-    Node(key, left, _) if value < key -> contains(left, value)
-    Node(_, _, right) -> contains(right, value)
-  }
+pub fn contains(bst: BST(a), value: a) -> Bool {
+  contains_recurse(bst.root, value, bst.compare)
 }
 
 /// Returns 'True' if no nodes are in the tree and `False` otherwise.
-pub fn is_empty(tree: Tree) -> Bool {
-  case tree {
+pub fn is_empty(bst: BST(a)) -> Bool {
+  case bst.root {
     Empty -> True
     _ -> False
   }
 }
 
 /// Returns the number of nodes in the tree.
-pub fn length(tree: Tree) -> Int {
-  length_recurse(0, tree)
+pub fn size(bst: BST(a)) -> Int {
+  length_recurse(0, bst.root)
 }
 
 /// Returns a list of all the keys in the tree including duplicates.
 /// Order of the list is the [`preorder traversal`](https://www.geeksforgeeks.org/preorder-traversal-of-binary-tree/) of the tree.
-pub fn to_list(tree: Tree) -> List(Int) {
-  to_list_recurse([], tree)
+pub fn to_list(bst: BST(a)) -> List(a) {
+  to_list_recurse([], bst.root)
 }
 
 /// Returns a string representation of the tree as a graph.
-pub fn to_graph(tree: Tree) -> String {
-  case tree {
+pub fn to_graph(bst: BST(a), to_string: fn(a) -> String) -> String {
+  case bst.root {
     Empty -> "Empty tree"
     Node(key, left, right) -> {
       let pointer_right = "└ʀ─"
@@ -95,25 +84,25 @@ pub fn to_graph(tree: Tree) -> String {
       }
 
       string_builder.new()
-      |> string_builder.append(int.to_string(key))
-      |> build_graph("", pointer_left, left, case right {
+      |> string_builder.append(to_string(key))
+      |> to_graph_recurse("", pointer_left, left, case right {
         Empty -> False
         _ -> True
-      })
-      |> build_graph("", pointer_right, right, False)
+      }, to_string)
+      |> to_graph_recurse("", pointer_right, right, False, to_string)
       |> string_builder.append("\n")
       |> string_builder.to_string()
     }
   }
 }
 
-/// Recursively adds nodes to the string representation of a tree
-fn build_graph(
+fn to_graph_recurse(
   sb: string_builder.StringBuilder, 
   padding: String, 
   pointer: String, 
-  tree: Tree, 
-  has_right_sibling: Bool
+  tree: Tree(a), 
+  has_right_sibling: Bool,
+  to_string: fn(a) -> String
   ) -> string_builder.StringBuilder {
     case tree {
       Empty -> sb
@@ -135,17 +124,35 @@ fn build_graph(
         string_builder.append(sb, "\n")
         |> string_builder.append(padding)
         |> string_builder.append(pointer)
-        |> string_builder.append(int.to_string(key))
-        |> build_graph(padding_new, pointer_left, left, case right {
+        |> string_builder.append(to_string(key))
+        |> to_graph_recurse(padding_new, pointer_left, left, case right {
           Empty -> False
           _ -> True
-        })
-        |> build_graph(padding_new, pointer_right, right, False)
+        }, to_string)
+        |> to_graph_recurse(padding_new, pointer_right, right, False, to_string)
       }
     }
 }
 
-fn length_recurse(length: Int, tree: Tree) -> Int {
+fn from_list_recurse(list: List(a), tree: Tree(a), compare: fn(a, a) -> Order) -> Tree(a) {
+  case list {
+    [] -> tree
+    [value, ..rest] -> from_list_recurse(rest, insert_recurse(tree, value, compare), compare)
+  }
+} 
+
+fn contains_recurse(tree: Tree(a), value: a, compare: fn(a, a) -> Order) -> Bool {
+  case tree {
+    Empty -> False
+    Node(key, left, right) -> case compare(value, key) {
+      Eq -> True
+      Lt -> contains_recurse(left, value, compare)
+      Gt -> contains_recurse(right, value, compare)
+    }
+  }
+}
+
+fn length_recurse(length: Int, tree: Tree(a)) -> Int {
   case tree {
     Empty -> length
     Node(_, left, right) -> {
@@ -156,7 +163,7 @@ fn length_recurse(length: Int, tree: Tree) -> Int {
   }
 }
 
-fn to_list_recurse(keys: List(Int), tree: Tree) -> List(Int) {
+fn to_list_recurse(keys: List(a), tree: Tree(a)) -> List(a) {
   case tree {
     Empty -> keys
     Node(key, left, right) -> {
@@ -167,14 +174,31 @@ fn to_list_recurse(keys: List(Int), tree: Tree) -> List(Int) {
   }
 }
 
-fn build_tree(tree: Tree, list: List(Int)) -> Tree {
-  case list {
-    [] -> tree
-    [first, ..rest] -> build_tree(insert(tree, first), rest)
+fn insert_recurse(tree: Tree(a), value: a, compare: fn(a, a) -> Order) -> Tree(a) {
+  case tree {
+    Empty -> Node(value, Empty, Empty)
+    Node(key, left, right) -> case compare(value, key) {
+      Lt | Eq -> Node(key, insert_recurse(left, value, compare), right)
+      Gt -> Node(key, left, insert_recurse(right, value, compare))
+    }
   }
 }
 
-fn get_leftmost_child(tree: Tree) -> Tree {
+fn delete_recurse(tree: Tree(a), value: a, compare: fn(a, a) -> Order) -> Tree(a) {
+  case tree {
+    Node(key, left, right) -> case compare(value, key) {
+      Eq -> case get_leftmost_child(right) {
+        Empty -> left
+        Node(successor_key, _, _) -> Node(successor_key, left, delete_recurse(right, successor_key, compare))
+      }
+      Lt -> Node(key, delete_recurse(left, value, compare), right)
+      Gt -> Node(key, left, delete_recurse(right, value, compare))
+    }
+    _ -> tree
+  }
+}
+
+fn get_leftmost_child(tree: Tree(a)) -> Tree(a) {
   case tree {
     Empty -> Empty
     Node(_, Empty, _) -> tree
